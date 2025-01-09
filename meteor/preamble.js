@@ -1,9 +1,18 @@
 // (start of meteor/preamble.js)
-C_MINISAT = function () {
+const C_MINISAT = function () {
   var module = {};
 // Put emscripten in "node mode" but don't give it the real `process`
 // object.  It does have access to `console`.
-var require = function () {};
+var require = function (mod) {
+  // mock 'fs' module
+  if (mod === 'fs') {
+    return {
+      readFileSync: function (filename) {
+        ; // no-op
+      }
+    };
+  }
+};
 var process = {
   argv: ['node', 'minisat'],
   on: function () {},

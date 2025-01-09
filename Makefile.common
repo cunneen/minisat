@@ -1,0 +1,73 @@
+
+## Load Previous Configuration ####################################################################
+
+-include config.mk
+
+## Configurable options ###########################################################################
+
+# Directory to store object files, libraries, executables, and dependencies:
+BUILD_DIR      ?= build
+
+# Include debug-symbols in release builds
+MINISAT_RELSYM ?= -g
+
+# Sets of compile flags for different build types
+MINISAT_REL    ?= -O3 -D NDEBUG
+MINISAT_DEB    ?= -O0 -D DEBUG 
+MINISAT_PRF    ?= -O3 -D NDEBUG
+MINISAT_FPIC   ?= -fpic
+
+# GNU Standard Install Prefix
+prefix         ?= /usr/local
+
+## Write Configuration  ###########################################################################
+
+config:
+	@( echo 'BUILD_DIR?=$(BUILD_DIR)'           ; \
+	   echo 'MINISAT_RELSYM?=$(MINISAT_RELSYM)' ; \
+	   echo 'MINISAT_REL?=$(MINISAT_REL)'       ; \
+	   echo 'MINISAT_DEB?=$(MINISAT_DEB)'       ; \
+	   echo 'MINISAT_PRF?=$(MINISAT_PRF)'       ; \
+	   echo 'MINISAT_FPIC?=$(MINISAT_FPIC)'     ; \
+	   echo 'prefix?=$(prefix)'                 ) > config.mk
+
+## Configurable options end #######################################################################
+
+INSTALL ?= install
+
+# GNU Standard Install Variables
+exec_prefix ?= $(prefix)
+includedir  ?= $(prefix)/include
+bindir      ?= $(exec_prefix)/bin
+libdir      ?= $(exec_prefix)/lib
+datarootdir ?= $(prefix)/share
+mandir      ?= $(datarootdir)/man
+
+# Target file names
+MINISAT      = minisat#       Name of MiniSat main executable.
+MINISAT_CORE = minisat_core#  Name of simplified MiniSat executable (only core solver support).
+MINISAT_SLIB = lib$(MINISAT).a#  Name of MiniSat static library.
+MINISAT_DLIB = lib$(MINISAT).dylib# Name of MiniSat shared library.
+
+# Shared Library Version
+SOMAJOR=2
+SOMINOR=1
+SORELEASE?=.0#   Declare empty to leave out from library file name.
+
+MINISAT_CXXFLAGS = -I. -D __STDC_LIMIT_MACROS -D __STDC_FORMAT_MACROS -Wall -Wno-parentheses -Wextra
+MINISAT_LDFLAGS  = -Wall
+
+ifeq (Darwin,$(findstring Darwin,$(shell uname)))
+	SHARED_LDFLAGS += -shared -Wl,-dylib_install_name,$(MINISAT_DLIB).$(SOMAJOR)
+	RELEASE_LDFLAGS +=
+else
+	SHARED_LDFLAGS += -shared -Wl,-soname,$(MINISAT_DLIB).$(SOMAJOR)
+	RELEASE_LDFLAGS += -static
+endif
+
+ECHO=@echo
+ifeq ($(VERB),)
+VERB=@
+else
+VERB=
+endif

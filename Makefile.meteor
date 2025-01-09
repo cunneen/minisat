@@ -1,0 +1,118 @@
+# This just compiles the meteor/logic-solver.cc into a javascript file i.e.
+#    build/release/bin/minisat-meteor.js
+
+all: check-instrumemtation minisat-meteor.js
+
+## Load common Configuration ###################################
+
+include Makefile.common
+
+ECHO=@echo
+ifeq ($(VERB),)
+VERB=@
+else
+VERB=
+endif
+
+################################################################
+#inherit any targets not found in this file from "Makefile"
+
+# % matches everything not explicitly specified
+%: inherit # "inherit" is just an empty command to run so we can specify a dependency
+	@$(MAKE) -f Makefile $@ # The rule just has a dependency from "Makefile"
+inherit: ; # the "inherit" command is a no-op
+
+################################################################
+
+# EMSCRIPTEN LINK/COMPILE FLAGS
+# # flags reference: http://kripken.github.io/emscripten-site/docs/tools_reference/emcc.html
+# # Add -g instead of --closure 1 to make the output pretty instead of mangled.
+LOGIC_SOLVER_LDFLAGS?=\
+		-O3  \
+        --pre-js ./meteor/preamble.js  \
+        --post-js ./meteor/postamble.js  \
+        -s EXPORTED_FUNCTIONS='[\
+            "_addClause", \
+            "_createTheSolver", \
+            "_ensureVar", \
+            "_free", \
+            "_getConflictClause", \
+            "_getConflictClauseSize", \
+            "_getNumVars", \
+            "_getSolution", \
+            "_malloc", \
+            "_retireVar", \
+            "_solve", \
+            "_solveAssuming", \
+            "_unyo", \
+			"_yo" \
+			]'  \
+		-s ENVIRONMENT=node \
+        -s NO_FILESYSTEM=1  \
+        -s NO_DYNAMIC_EXECUTION=0 \
+        -s ALLOW_MEMORY_GROWTH=1 \
+		-s SINGLE_FILE=1 \
+		-s WASM_ASYNC_COMPILATION=0 \
+        -s WASM=0
+
+# ----------------------------------------------------------------
+# Run with environment variable ENABLE_INSTRUMENTATION=true to enable
+#   the hacky malloc instrumentation (for development use only).
+# This will add the "-g" compile flag.
+# Otherwise, the "--closure 1" flag will be used.
+# 
+
+ENABLE_INSTRUMENTATION ?= false
+
+check-instrumemtation:
+	# check env var to enable/disable the hacky malloc instrumentation
+	$(eval LOGIC_SOLVER_LDFLAGS += $(if $(filter $(ENABLE_INSTRUMENTATION),true), -g , --closure 1))
+
+
+CXXFLAGS += -I. -D __STDC_LIMIT_MACROS -D __STDC_FORMAT_MACROS -Wall -Wno-parentheses -Wextra
+LDFLAGS  += -Wall
+
+.PHONY: minisat-meteor.js
+
+SRCS = meteor/logic-solver.cc $(wildcard minisat/core/*.cc) $(wildcard minisat/simp/*.cc) $(wildcard minisat/utils/*.cc)
+
+minisat-meteor.js:	$(BUILD_DIR)/release/bin/minisat-meteor.js check-instrumemtation
+
+
+## Build-type Compile-flags:
+$(BUILD_DIR)/release/%.o:			CXXFLAGS +=$(MINISAT_REL) 
+
+
+## Build-type Link-flags:
+$(BUILD_DIR)/release/bin/minisat-meteor.js:		LDFLAGS += $(RELEASE_LDFLAGS) 
+$(BUILD_DIR)/%/bin/minisat-meteor.js:				LDFLAGS += $(LOGIC_SOLVER_LDFLAGS)
+
+## Executable dependencies
+$(BUILD_DIR)/release/bin/minisat-meteor.js:	 	$(BUILD_DIR)/release/minisat/simp/Main.o $(BUILD_DIR)/release/lib/$(MINISAT_SLIB) $(BUILD_DIR)/release/meteor/logic-solver.o
+
+## Compile rules (these should be unified, buit I have not yet found a way which works in GNU Make)
+$(BUILD_DIR)/release/%.o:	%.cc
+	$(ECHO) Compiling: $@
+	$(VERB) mkdir -p $(dir $@)
+	$(VERB) $(CXX) $(CXXFLAGS) -c -o $@ $< -MMD -MF $(BUILD_DIR)/release/$*.d
+
+## Linking rule - this will run emscripten
+$(BUILD_DIR)/release/bin/minisat-meteor.js:
+	$(ECHO) ====== Linking Binary: $@
+	$(ECHO) ====== Prerequisites: $^
+	$(VERB) mkdir -p $(dir $@)
+	$(VERB) $(CXX) $^ $(LDFLAGS) -o $@
+
+
+clean:
+	rm -f $(foreach t, release debug profile dynamic, $(foreach o, $(SRCS:.cc=.o), $(BUILD_DIR)/$t/$o)) \
+          $(foreach t, release debug profile dynamic, $(foreach d, $(SRCS:.cc=.d), $(BUILD_DIR)/$t/$d)) \
+	  $(foreach t, release debug profile dynamic, $(BUILD_DIR)/$t/bin/minisat-meteor.js) \
+	  build/minisat.js
+
+distclean:	clean
+	rm -f config.mk
+
+
+## Include generated dependencies
+-include $(foreach s, $(SRCS:.cc=.d), $(BUILD_DIR)/release/$s)

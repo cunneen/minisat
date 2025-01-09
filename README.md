@@ -6,8 +6,8 @@
    have `node` in your path, you can locally modify the script in the next step
    where it says `NODE=node`.  (Node is only used to run a quick sanity check
    after compiling.)
-2. In the repo directory, run `meteor/make-emscripten.sh`.
-3. That's it.  If everything worked, the build product is `build/minisat.js`.
+3. In the repo directory, run `meteor/make-emscripten.sh`.
+4. That's it.  If everything worked, the build product is `build/minisat.js`.
 
 Notes:
 
@@ -22,12 +22,14 @@ Notes:
 
 * There's heap allocation instrumentation, hackily implemented, that doesn't
   actually run unless you put the compiler in debug mode (see comment in the
-  make script about the -g flag).  You also need to uncomment the lines
-  starting with `/////` in `meteor/midamble.js` (which have been disabled
-  so that they don't interfere with asm.js optimization).
+  make script about the -g flag). You can enable the instrumentation
+  by passing ENABLE_INSTRUMENTATION=true as an environment variable, e.g.:
 
-* You want to leave minification on (no -g flag), because unlike
-  client-side code served by Meteor (which is minified anyway), Node
-  runs this code directly.  Minification actually helps the JS compile
-  time quite a bit!
+  ```sh
+  ENABLE_INSTRUMENTATION=true ./meteor/make-emscripten.sh
+  ```
 
+* You want to leave minification on (no -g flag or ENABLE_INSTRUMENTATION env var),
+  because unlike client-side code served by Meteor (which is minified anyway),
+  Node runs this code directly.  Minification actually helps the JS compile time
+  quite a bit!
