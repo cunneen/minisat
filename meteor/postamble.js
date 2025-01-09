@@ -48,7 +48,7 @@ Module._free = hookedFree;
 _malloc = hookedMalloc;
 _free = hookedFree;
 var setInnerMalloc, setInnerFree; // assigned from the "midamble"
-if (setInnerMalloc) {
+if (typeof setInnerMalloc !== 'undefined') {
   setInnerMalloc(hookedMalloc);
   setInnerFree(hookedFree);
 }
