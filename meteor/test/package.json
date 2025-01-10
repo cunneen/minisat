@@ -1,0 +1,18 @@
+{
+  "name": "test",
+  "version": "1.0.0",
+  "description": "",
+  "main": "logic.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@reactioncommerce/random": "^1.0.2",
+    "ejson": "^2.2.3",
+    "lodash.has": "^4.5.2",
+    "lodash.isequal": "^4.5.0"
+  }
+}

@@ -26,34 +26,77 @@ inherit: ; # the "inherit" command is a no-op
 
 # EMSCRIPTEN LINK/COMPILE FLAGS
 # # flags reference: http://kripken.github.io/emscripten-site/docs/tools_reference/emcc.html
+# #  and also https://github.com/emscripten-core/emscripten/blob/3.1.74/src/settings.js
 # # Add -g instead of --closure 1 to make the output pretty instead of mangled.
 LOGIC_SOLVER_LDFLAGS?=\
 		-O3  \
-        --pre-js ./meteor/preamble.js  \
-        --post-js ./meteor/postamble.js  \
-        -s EXPORTED_FUNCTIONS='[\
-            "_addClause", \
-            "_createTheSolver", \
-            "_ensureVar", \
-            "_free", \
-            "_getConflictClause", \
-            "_getConflictClauseSize", \
-            "_getNumVars", \
-            "_getSolution", \
-            "_malloc", \
-            "_retireVar", \
-            "_solve", \
-            "_solveAssuming", \
-            "_unyo", \
-			"_yo" \
+		-s EXPORTED_FUNCTIONS='[\
+			"_addClause", \
+			"_createTheSolver", \
+			"_ensureVar", \
+			"_free", \
+			"_getConflictClause", \
+			"_getConflictClauseSize", \
+			"_getNumVars", \
+			"_getSolution", \
+			"_malloc", \
+			"_retireVar", \
+			"_solve", \
+			"_solveAssuming", \
+			"_unyo", \
+			"_yo", \
+			"allocate", \
+			"ccall", \
+			"cwrap", \
+			"UTF8ToString", \
+			"stringToUTF8", \
+			"UTF16ToString", \
+			"stringToUTF16", \
+			"UTF32ToString", \
+			"stringToUTF32", \
+			"AsciiToString", \
+			"intArrayFromString", \
+			"intArrayToString", \
+			"writeArrayToMemory", \
+			"stackTrace", \
+			"stackSave", \
+			"stackAlloc", \
+			"stackRestore", \
+			"getValue", \
+			"setValue" \
 			]'  \
-		-s ENVIRONMENT=node \
-        -s NO_FILESYSTEM=1  \
-        -s NO_DYNAMIC_EXECUTION=0 \
-        -s ALLOW_MEMORY_GROWTH=1 \
-		-s SINGLE_FILE=1 \
+		-s MIN_NODE_VERSION=140000 \
+		-s EXPORT_ALL=1 \
 		-s WASM_ASYNC_COMPILATION=0 \
-        -s WASM=0
+		-s WASM=0 \
+		-s MODULARIZE=1 \
+		-s ASSERTIONS=1 \
+		-s ALLOW_MEMORY_GROWTH=1 \
+		-s NO_FILESYSTEM=1  \
+		--extern-pre-js ./meteor/extern-preamble.js  \
+		-s ENVIRONMENT=node \
+		-s SINGLE_FILE=1 \
+
+
+	# OTHER OPTIONS:
+		# -s MALLOC=emmalloc \
+		# -s STACK_SIZE=16777216 \
+		# -s INITIAL_MEMORY=64MB \
+		# -s INITIAL_HEAP=64MB \
+
+		# -s STACK_SIZE=131072 \
+
+		# --pre-js ./meteor/preamble.js  \
+		# --post-js ./meteor/postamble.js  \
+		# -s IMPORTED_MEMORY=1 \
+
+		# -s ENVIRONMENT=node \
+		# -s NO_DYNAMIC_EXECUTION=0 \
+		# -s SINGLE_FILE=1 \
+		# -s WASM_ASYNC_COMPILATION=0 \
+		# -s ALLOW_MEMORY_GROWTH=1 \
+		# -s WASM=0
+		# -s ABORTING_MALLOC=1 \
 
 # ----------------------------------------------------------------
 # Run with environment variable ENABLE_INSTRUMENTATION=true to enable
@@ -63,10 +106,12 @@ LOGIC_SOLVER_LDFLAGS?=\
 # 
 
 ENABLE_INSTRUMENTATION ?= false
+INSTRUMENTATION_FLAGS ?= -g --post-js ./meteor/postamble.js
+OPTIMIZATION_FLAGS ?= --closure 1
 
 check-instrumemtation:
 	# check env var to enable/disable the hacky malloc instrumentation
-	$(eval LOGIC_SOLVER_LDFLAGS += $(if $(filter $(ENABLE_INSTRUMENTATION),true), -g , --closure 1))
+	$(eval LOGIC_SOLVER_LDFLAGS += $(if $(filter $(ENABLE_INSTRUMENTATION),true), $(INSTRUMENTATION_FLAGS) , $(OPTIMIZATION_FLAGS)))
 
 
 CXXFLAGS += -I. -D __STDC_LIMIT_MACROS -D __STDC_FORMAT_MACROS -Wall -Wno-parentheses -Wextra
@@ -76,7 +121,7 @@ LDFLAGS  += -Wall
 
 SRCS = meteor/logic-solver.cc $(wildcard minisat/core/*.cc) $(wildcard minisat/simp/*.cc) $(wildcard minisat/utils/*.cc)
 
-minisat-meteor.js:	$(BUILD_DIR)/release/bin/minisat-meteor.js check-instrumemtation
+minisat-meteor.js:	check-instrumemtation $(BUILD_DIR)/release/bin/minisat-meteor.js
 
 
 ## Build-type Compile-flags:
@@ -106,7 +151,7 @@ $(BUILD_DIR)/release/bin/minisat-meteor.js:
 
 clean:
 	rm -f $(foreach t, release debug profile dynamic, $(foreach o, $(SRCS:.cc=.o), $(BUILD_DIR)/$t/$o)) \
-          $(foreach t, release debug profile dynamic, $(foreach d, $(SRCS:.cc=.d), $(BUILD_DIR)/$t/$d)) \
+		  $(foreach t, release debug profile dynamic, $(foreach d, $(SRCS:.cc=.d), $(BUILD_DIR)/$t/$d)) \
 	  $(foreach t, release debug profile dynamic, $(BUILD_DIR)/$t/bin/minisat-meteor.js) \
 	  build/minisat.js
 
