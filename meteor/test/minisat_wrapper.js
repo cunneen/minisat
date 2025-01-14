@@ -1,5 +1,6 @@
 // copied from https://github.com/meteor/meteor/blob/master/packages/logic-solver/minisat_wrapper.js
-const C_MINISAT = require("../../build/minisat.js");
+const MINISAT_JSLIB=process.env.MINISAT??"mergesat";
+const C_MINISAT = require(`../../build/${MINISAT_JSLIB}.js`);
 
 const MiniSat = function () {
 

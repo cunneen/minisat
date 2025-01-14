@@ -1,7 +1,7 @@
 # This just compiles the meteor/logic-solver.cc into a javascript file i.e.
 #    build/release/bin/minisat-meteor.js
 
-all: check-instrumemtation minisat-meteor.js
+all: check-instrumemtation $(MINISAT)-meteor.js
 
 ## Load common Configuration ###################################
 
@@ -45,7 +45,6 @@ LOGIC_SOLVER_LDFLAGS?=\
 			"_solveAssuming", \
 			"_unyo", \
 			"_yo", \
-			"allocate", \
 			"ccall", \
 			"cwrap", \
 			"UTF8ToString", \
@@ -58,7 +57,6 @@ LOGIC_SOLVER_LDFLAGS?=\
 			"intArrayFromString", \
 			"intArrayToString", \
 			"writeArrayToMemory", \
-			"stackTrace", \
 			"stackSave", \
 			"stackAlloc", \
 			"stackRestore", \
@@ -77,8 +75,13 @@ LOGIC_SOLVER_LDFLAGS?=\
 		-s ENVIRONMENT=node \
 		-s SINGLE_FILE=1 \
 
+#       # the postamble will be included further below, if
+#       #  ENABLE_INSTRUMENTATION=true
+#		--post-js ./meteor/postamble.js  \
+
 
 	# OTHER OPTIONS:
+		#	-O3  \
 		# -s MALLOC=emmalloc \
 		# -s STACK_SIZE=16777216 \
 		# -s INITIAL_MEMORY=64MB \
@@ -87,7 +90,6 @@ LOGIC_SOLVER_LDFLAGS?=\
 		# -s STACK_SIZE=131072 \
 
 		# --pre-js ./meteor/preamble.js  \
-		# --post-js ./meteor/postamble.js  \
 		# -s IMPORTED_MEMORY=1 \
 
 		# -s ENVIRONMENT=node \
@@ -97,6 +99,8 @@ LOGIC_SOLVER_LDFLAGS?=\
 		# -s ALLOW_MEMORY_GROWTH=1 \
 		# -s WASM=0
 		# -s ABORTING_MALLOC=1 \
+		# -s IGNORE_MISSING_MAIN=1 \
+		# --no-entry \
 
 # ----------------------------------------------------------------
 # Run with environment variable ENABLE_INSTRUMENTATION=true to enable
@@ -114,14 +118,14 @@ check-instrumemtation:
 	$(eval LOGIC_SOLVER_LDFLAGS += $(if $(filter $(ENABLE_INSTRUMENTATION),true), $(INSTRUMENTATION_FLAGS) , $(OPTIMIZATION_FLAGS)))
 
 
-CXXFLAGS += -I. -D __STDC_LIMIT_MACROS -D __STDC_FORMAT_MACROS -Wall -Wno-parentheses -Wextra
-LDFLAGS  += -Wall
+# CXXFLAGS += -I. -D __STDC_LIMIT_MACROS -D __STDC_FORMAT_MACROS -Wall -Wno-parentheses -Wextra
+# LDFLAGS  += -Wall
 
-.PHONY: minisat-meteor.js
+.PHONY: $(MINISAT)-meteor.js
 
 SRCS = meteor/logic-solver.cc $(wildcard minisat/core/*.cc) $(wildcard minisat/simp/*.cc) $(wildcard minisat/utils/*.cc)
 
-minisat-meteor.js:	check-instrumemtation $(BUILD_DIR)/release/bin/minisat-meteor.js
+$(MINISAT)-meteor.js:	check-instrumemtation $(BUILD_DIR)/release/bin/$(MINISAT)-meteor.js
 
 
 ## Build-type Compile-flags:
@@ -129,31 +133,36 @@ $(BUILD_DIR)/release/%.o:			CXXFLAGS +=$(MINISAT_REL)
 
 
 ## Build-type Link-flags:
-$(BUILD_DIR)/release/bin/minisat-meteor.js:		LDFLAGS += $(RELEASE_LDFLAGS) 
-$(BUILD_DIR)/%/bin/minisat-meteor.js:				LDFLAGS += $(LOGIC_SOLVER_LDFLAGS)
+$(BUILD_DIR)/release/bin/$(MINISAT)-meteor.js:		LDFLAGS += $(RELEASE_LDFLAGS) 
+$(BUILD_DIR)/%/bin/$(MINISAT)-meteor.js:				LDFLAGS += $(LOGIC_SOLVER_LDFLAGS)
 
 ## Executable dependencies
-$(BUILD_DIR)/release/bin/minisat-meteor.js:	 	$(BUILD_DIR)/release/minisat/simp/Main.o $(BUILD_DIR)/release/lib/$(MINISAT_SLIB) $(BUILD_DIR)/release/meteor/logic-solver.o
+$(BUILD_DIR)/release/bin/$(MINISAT)-meteor.js:	 	 $(BUILD_DIR)/release/lib/$(MINISAT_SLIB) $(BUILD_DIR)/release/meteor/logic-solver.o
 
 ## Compile rules (these should be unified, buit I have not yet found a way which works in GNU Make)
 $(BUILD_DIR)/release/%.o:	%.cc
 	$(ECHO) Compiling: $@
 	$(VERB) mkdir -p $(dir $@)
-	$(VERB) $(CXX) $(CXXFLAGS) -c -o $@ $< -MMD -MF $(BUILD_DIR)/release/$*.d
+	$(VERB) $(CXX) $(MINISAT_CXXFLAGS) $(CXXFLAGS) -c -o $@ $< -MMD -MF $(BUILD_DIR)/release/$*.d
 
 ## Linking rule - this will run emscripten
-$(BUILD_DIR)/release/bin/minisat-meteor.js:
+$(BUILD_DIR)/release/bin/$(MINISAT)-meteor.js:
 	$(ECHO) ====== Linking Binary: $@
 	$(ECHO) ====== Prerequisites: $^
+	$(ECHO)    VERB: $(VERB)
+	$(ECHO)    CXX: $(CXX)
+	$(ECHO)    EMSCRIPTEN_CXXFLAGS: $(EMSCRIPTEN_CXXFLAGS)
+	$(ECHO)    CXXFLAGS: $(CXXFLAGS)
+	$(ECHO)    EMSCRIPTEN_LDFLAGS: $(EMSCRIPTEN_LDFLAGS)
 	$(VERB) mkdir -p $(dir $@)
-	$(VERB) $(CXX) $^ $(LDFLAGS) -o $@
+	$(VERB) $(CXX) $(EMSCRIPTEN_CXXFLAGS) $(CXXFLAGS) $^ $(LDFLAGS) $(EMSCRIPTEN_LDFLAGS) -o $@
 
 
 clean:
 	rm -f $(foreach t, release debug profile dynamic, $(foreach o, $(SRCS:.cc=.o), $(BUILD_DIR)/$t/$o)) \
 		  $(foreach t, release debug profile dynamic, $(foreach d, $(SRCS:.cc=.d), $(BUILD_DIR)/$t/$d)) \
-	  $(foreach t, release debug profile dynamic, $(BUILD_DIR)/$t/bin/minisat-meteor.js) \
-	  build/minisat.js
+	  $(foreach t, release debug profile dynamic, $(BUILD_DIR)/$t/bin/$(MINISAT)-meteor.js) \
+	  build/$(MINISAT).js
 
 distclean:	clean
 	rm -f config.mk

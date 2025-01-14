@@ -1,5 +1,6 @@
-/*******************************************************************************************[Rnd.h]
-Copyright (c) 2012, Niklas Sorensson
+/*************************************************************************************[Sharing.h]
+MergeSat -- Copyright (c) 2021,      Norbert Manthey
+
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,
 including without limitation the rights to use, copy, modify, merge, publish, distribute,
@@ -16,52 +17,53 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
-#ifndef Minisat_Rnd_h
-#define Minisat_Rnd_h
+#ifndef MergeSat_Sharing_h
+#define MergeSat_Sharing_h
 
-#include "minisat/mtl/Vec.h"
+#include "core/SolverTypes.h"
+#include "mtl/Vec.h"
 
-namespace Minisat {
+#include <vector>
 
-// Generate a random double:
-static inline double drand(double& seed)
+namespace MERGESAT_NSPACE
 {
-    seed *= 1389796;
-    int q = (int)(seed / 2147483647);
-    seed -= (double)q * 2147483647;
-    return seed / 2147483647;
-}
+//=================================================================================================
 
-
-// Generate a random integer:
-static inline int irand(double& seed, int size) { return (int)(drand(seed) * size); }
-
-
-// Randomly shuffle the contents of a vector:
-template<class T>
-static void randomShuffle(double& seed, vec<T>& xs)
+/** Object that memorizes clauses, re-using known object types. */
+class ClausePool
 {
-    for (int i = 0; i < xs.size(); i++){
-        int pick = i + irand(seed, xs.size() - i);
-        T tmp = xs[i];
-        xs[i] = xs[pick];
-        xs[pick] = tmp;
+    vec<CRef> clauses;
+    AccessCounter counter;
+    ClauseAllocator ca;
+
+    public:
+    ClausePool() : ca(counter) {}
+
+    int size() const { return clauses.size(); }
+
+    void reset()
+    {
+        clauses.clear();
+        ca.clear();
     }
-}
 
-// Randomly shuffle a vector of a vector (ugly)
-template<class T>
-static void randomShuffle(double& seed, vec<vec<T> >& xs)
-{
-    for (int i = 0; i < xs.size(); i++){
-        int pick = i + irand(seed, xs.size() - i);
-        vec<T> tmp; xs[i].moveTo(tmp);
-        xs[pick].moveTo(xs[i]);
-        tmp.moveTo(xs[pick]);
+    void add_shared_clause(const std::vector<int> &c, int glueValue)
+    {
+
+        CRef cr = ca.alloc_placeholder(c.size(), true);
+        clauses.push(cr);
+        Clause &d = ca[cr];
+        d.set_lbd(glueValue);
+
+        // actually copy literals over
+        for (int i = 0; i < d.size(); i++) d[i] = fromFormal(c[i]);
     }
-}
+
+    const Clause &getClause(int index) const { return ca[clauses[index]]; }
+};
 
 
 //=================================================================================================
-} // namespace Minisat
+} // namespace MERGESAT_NSPACE
+
 #endif

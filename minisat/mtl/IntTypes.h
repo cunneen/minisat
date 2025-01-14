@@ -17,26 +17,65 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
-#ifndef Minisat_IntTypes_h
-#define Minisat_IntTypes_h
+#ifndef MergeSat_IntTypes_h
+#define MergeSat_IntTypes_h
 
 #ifdef __sun
-    // Not sure if there are newer versions that support C99 headers. The
-    // needed features are implemented in the headers below though:
+// Not sure if there are newer versions that support C99 headers. The
+// needed features are implemented in the headers below though:
 
-#   include <sys/int_types.h>
-#   include <sys/int_fmtio.h>
-#   include <sys/int_limits.h>
+#include <sys/int_fmtio.h>
+#include <sys/int_limits.h>
+#include <sys/int_types.h>
 
 #else
 
-#   include <stdint.h>
-#   include <inttypes.h>
+#include <inttypes.h>
+#include <stdint.h>
 
 #endif
 
 #include <limits.h>
+#include <math.h>
 
 //=================================================================================================
+
+inline uint64_t log2_64(uint64_t x)
+{
+    // calculate ld based on number of leading zeros
+    return (uint64_t)(8 * sizeof(x) - __builtin_clzll((x)) - 1);
+}
+
+class PowFixedBase
+{
+    double base;
+    bool useLegacy = false;
+
+    public:
+    PowFixedBase(double b, bool legacy = false) : base(b), useLegacy(legacy) {}
+
+    double pow(unsigned exponent)
+    {
+        /* library */
+        if (useLegacy) return ::pow(base, exponent);
+
+        /* trivial case */
+        if (!exponent) return (double)1;
+
+        /* get binary representation */
+        unsigned binary = ~(~0U >> 1);
+        while (!(exponent & binary)) binary >>= 1;
+        double intermediate = base;
+
+        /* only as long as there are bits */
+        while (binary >>= 1) {
+            /* square for next bit in binary representation */
+            intermediate *= intermediate;
+            /* use intermediate result, if bit is set */
+            if (exponent & binary) intermediate *= base;
+        }
+        return intermediate;
+    }
+};
 
 #endif

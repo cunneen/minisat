@@ -1,6 +1,6 @@
 #include "../minisat/simp/SimpSolver.h"
 
-using namespace Minisat;
+using namespace MERGESAT_NSPACE;
 
 // NOTE: These functions needed to be listed in "make-emscripten.sh" to
 // be picked up by the compiler!
@@ -124,6 +124,6 @@ extern "C" {
     // conflict is an IntSet<Lit>, which we can cast
     // to an array of int, where each int is 2*v + s where
     // v is the variable number and s is 1 for "not".
-    return (int *)((Lit *)*const_cast<vec<Lit> *>(&SOLVER->conflict.toVec()));
+    return (int *)((Lit *)*const_cast<vec<Lit> *>(&SOLVER->conflict));
   }
 };

@@ -44,8 +44,8 @@ datarootdir ?= $(prefix)/share
 mandir      ?= $(datarootdir)/man
 
 # Target file names
-MINISAT      = minisat#       Name of MiniSat main executable.
-MINISAT_CORE = minisat_core#  Name of simplified MiniSat executable (only core solver support).
+MINISAT      = mergesat#       Name of MiniSat main executable.
+MINISAT_CORE = $(MINISAT)_core#  Name of simplified MiniSat executable (only core solver support).
 MINISAT_SLIB = lib$(MINISAT).a#  Name of MiniSat static library.
 MINISAT_DLIB = lib$(MINISAT).dylib# Name of MiniSat shared library.
 
@@ -54,15 +54,27 @@ SOMAJOR=2
 SOMINOR=1
 SORELEASE?=.0#   Declare empty to leave out from library file name.
 
-MINISAT_CXXFLAGS = -I. -D __STDC_LIMIT_MACROS -D __STDC_FORMAT_MACROS -Wall -Wno-parentheses -Wextra
-MINISAT_LDFLAGS  = -Wall
+# Support more customization
+CXX_EXTRA_FLAGS ?=
+LD_EXTRA_FLAGS ?=
+STATIC_FLAGS ?= -static
+
+SHARED_CXXFLAGS = -I. -Iminisat -D __STDC_LIMIT_MACROS -D __STDC_FORMAT_MACROS
+SHARED_CXXFLAGS = -std=c++11  -flto
+SHARED_CXXFLAGS = -I. -Iminisat -D __STDC_LIMIT_MACROS -D __STDC_FORMAT_MACROS
+MINISAT_CXXFLAGS = $(SHARED_CXXFLAGS) $(CXX_EXTRA_FLAGS)
+MINISAT_CXXFLAGS += -Wall -Wextra -pedantic -Werror
+MINISAT_CXXFLAGS += -Wno-unused-parameter
+EMSCRIPTEN_CXXFLAGS = $(SHARED_CXXFLAGS)
+MINISAT_LDFLAGS  = -Wall -flto $(LD_EXTRA_FLAGS)
+EMSCRIPTEN_LDFLAGS =  -flto $(LD_EXTRA_FLAGS)
 
 ifeq (Darwin,$(findstring Darwin,$(shell uname)))
 	SHARED_LDFLAGS += -shared -Wl,-dylib_install_name,$(MINISAT_DLIB).$(SOMAJOR)
 	RELEASE_LDFLAGS +=
 else
 	SHARED_LDFLAGS += -shared -Wl,-soname,$(MINISAT_DLIB).$(SOMAJOR)
-	RELEASE_LDFLAGS += -static
+	RELEASE_LDFLAGS += $(STATIC_FLAGS)
 endif
 
 ECHO=@echo

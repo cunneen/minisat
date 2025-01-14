@@ -18,79 +18,82 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
-#ifndef Minisat_Dimacs_h
-#define Minisat_Dimacs_h
+#ifndef MergeSat_Dimacs_h
+#define MergeSat_Dimacs_h
 
 #include <stdio.h>
 
-#include "minisat/utils/ParseUtils.h"
-#include "minisat/core/SolverTypes.h"
+#include "core/SolverTypes.h"
+#include "utils/ParseUtils.h"
 
-namespace Minisat {
+namespace MERGESAT_NSPACE
+{
 
 //=================================================================================================
 // DIMACS Parser:
 
-template<class B, class Solver>
-static bool readClause(B& in, Solver& S, vec<Lit>& lits) {
-    int     parsed_lit, var;
-    bool    error = false;
+template <class B, class Solver> static void readClause(B &in, Solver &S, vec<Lit> &lits)
+{
+    int parsed_lit, var;
     lits.clear();
-    for (;;){
-        parsed_lit = parseInt(in, error);
-        if (parsed_lit == 0 || error) break;
-        var = abs(parsed_lit)-1;
+    for (;;) {
+        parsed_lit = parseInt(in);
+        if (parsed_lit == 0) break;
+        var = abs(parsed_lit) - 1;
         while (var >= S.nVars()) S.newVar();
-        lits.push( (parsed_lit > 0) ? mkLit(var) : ~mkLit(var) );
+        lits.push((parsed_lit > 0) ? mkLit(var) : ~mkLit(var));
     }
-    return !error;
 }
 
-template<class B, class Solver>
-static bool parse_DIMACS_main(B& in, Solver& S, bool strictp = false) {
+template <class B, class Solver> static void parse_DIMACS_main(B &in, Solver &S)
+{
     vec<Lit> lits;
-    int vars    = 0;
+    int vars = 0;
     int clauses = 0;
-    int cnt     = 0;
-    bool error  = false;
-    for (;;){
+    int cnt = 0;
+    for (;;) {
         skipWhitespace(in);
-        if (*in == EOF || error) break;
-        else if (*in == 'p'){
-            if (eagerMatch(in, "p cnf")){
-	        vars    = parseInt(in, error);
-	        clauses = parseInt(in, error);
-                // SATRACE'06 hack
-                // if (clauses > 4000000)
-                //     S.eliminate(true);
-            }else{
-                printf("PARSE ERROR! Unexpected char: %c\n", *in), error = true;
+        if (*in == EOF)
+            break;
+        else if (*in == 'p') {
+            if (eagerMatch(in, "p cnf")) {
+                vars = parseInt(in);
+                clauses = parseInt(in);
+
+                // allow to actually disable simplification
+                if (clauses > S.max_simp_cls()) S.eliminate(true);
+
+                // reserve space for the given amount of variables
+                S.reserveVars(vars);
+            } else {
+                printf("PARSE ERROR! Unexpected char: %c\n", *in), exit(3);
             }
         } else if (*in == 'c' || *in == 'p')
             skipLine(in);
-        else{
+        else {
             cnt++;
-            error = !readClause(in, S, lits);
-            S.addClause_(lits); }
+            readClause(in, S, lits);
+            S.addInputClause_(lits); // initialize online proof checker
+            S.addClause_(lits);
+        }
     }
-    if (strictp && cnt != clauses)
-      printf("PARSE ERROR! DIMACS header mismatch: wrong number of clauses\n"), error = true;
-    return !error;
+    if (vars != S.nVars()) fprintf(stderr, "c WARNING! DIMACS header mismatch: wrong number of variables.\n");
+    if (cnt != clauses) fprintf(stderr, "c WARNING! DIMACS header mismatch: wrong number of clauses.\n");
 }
 
 // Inserts problem into solver.
 //
-template<class Solver>
-static void parse_DIMACS(FILE* input_stream, Solver& S, bool strictp = false) {
+#ifdef USE_LIBZ
+template <class Solver> static void parse_DIMACS(gzFile input_stream, Solver &S)
+#else
+template <class Solver> static void parse_DIMACS(FILE *input_stream, Solver &S)
+#endif
+{
     StreamBuffer in(input_stream);
-    parse_DIMACS_main(in, S, strictp); }
-
-template<class Solver>
-  static bool parse_DIMACS_string(unsigned char* input, int size, Solver& S, bool strictp = false) {
-  StreamBufferString in(input, size);
-  return parse_DIMACS_main(in, S, strictp); }
+    parse_DIMACS_main(in, S);
+}
 
 //=================================================================================================
-}
+} // namespace MERGESAT_NSPACE
 
 #endif

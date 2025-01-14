@@ -2,6 +2,16 @@
 Copyright (c) 2003-2006, Niklas Een, Niklas Sorensson
 Copyright (c) 2007,      Niklas Sorensson
 
+ Chanseok Oh's MiniSat Patch Series -- Copyright (c) 2015, Chanseok Oh
+
+Maple_LCM, Based on MapleCOMSPS_DRUP -- Copyright (c) 2017, Mao Luo, Chu-Min LI, Fan Xiao: implementing a learnt clause
+minimisation approach Reference: M. Luo, C.-M. Li, F. Xiao, F. Manya, and Z. L. , “An effective learnt clause
+minimization approach for cdcl sat solvers,” in IJCAI-2017, 2017, pp. to–appear.
+
+Maple_LCM_Dist, Based on Maple_LCM -- Copyright (c) 2017, Fan Xiao, Chu-Min LI, Mao Luo: using a new branching heuristic
+called Distance at the beginning of search
+
+
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,
 including without limitation the rights to use, copy, modify, merge, publish, distribute,
@@ -20,199 +30,306 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 #include <errno.h>
 
-#include "minisat/utils/System.h"
-#include "minisat/utils/ParseUtils.h"
-#include "minisat/utils/Options.h"
-#include "minisat/core/Dimacs.h"
-#include "minisat/simp/SimpSolver.h"
+#include <signal.h>
+#include <sys/resource.h>
+#ifdef USE_LIBZ
+#include <zlib.h>
+#endif
 
-using namespace Minisat;
+#include "core/Dimacs.h"
+#include "simp/SimpSolver.h"
+#include "utils/Options.h"
+#include "utils/ParseUtils.h"
+#include "utils/System.h"
+
+#include <sstream>
+
+using namespace MERGESAT_NSPACE;
 
 //=================================================================================================
 
 
-static Solver* solver;
+void printStats(Solver &solver)
+{
+    solver.printStats();
+    double mem_used = memUsedPeak();
+    /* access memory access functions as part of CLI files only */
+    if (mem_used != 0) printf("c Memory used           : %.2f MB\n", mem_used);
+}
+
+
+static Solver *solver;
 // Terminate by notifying the solver and back out gracefully. This is mainly to have a test-case
 // for this feature of the Solver as it may take longer than an immediate call to '_exit()'.
-static void SIGINT_interrupt(int) { solver->interrupt(); }
+static void default_signal_handler(int signalnr)
+{
+    static bool interrupted = false;
+    solver->interrupt();
+
+    int ret = 0;
+    if (signalnr == SIGXCPU) ret = 124;
+    if (signalnr == SIGSEGV) ret = 139;
+    if (interrupted || ret != 0) {
+        if (solver->verbosity > 0) {
+            printf("c\nc *** caught signal %d ***\nc\n", signalnr);
+            printStats(*solver);
+            printf("c\n");
+            printf("c *** INTERRUPTED ***\n");
+        }
+        _exit(ret);
+    }
+
+    interrupted = true;
+}
+
 
 // Note that '_exit()' rather than 'exit()' has to be used. The reason is that 'exit()' calls
 // destructors and may cause deadlocks if a malloc/free function happens to be running (these
 // functions are guarded by locks for multithreaded use).
-static void SIGINT_exit(int) {
-    printf("\n"); printf("*** INTERRUPTED ***\n");
-    if (solver->verbosity > 0){
-        solver->printStats();
-        printf("\n"); printf("*** INTERRUPTED ***\n"); }
-    _exit(1); }
+static void SIGINT_exit(int)
+{
+    printf("\n");
+    printf("c *** INTERRUPTED ***\n");
+    if (solver->verbosity > 0) {
+        printStats(*solver);
+        printf("c\n");
+        printf("c *** INTERRUPTED ***\n");
+    }
+    _exit(1);
+}
 
+
+// print pcs information into file
+void print_pcs_file(const char *output_file_name)
+{
+    if (0 != (const char *)output_file_name) {
+        FILE *pcsFile = fopen((const char *)output_file_name, "wb"); // open file
+        if (!pcsFile) {
+            printf("c error: could not open parameter file %s\n", output_file_name);
+            exit(1);
+        }
+        fprintf(pcsFile, "# PCS Information for MergeSat\n#\n#\n# Parameters\n#\n#\n");
+        ::printOptions(pcsFile);
+        fprintf(pcsFile, "\n\n#\n#\n# Dependencies \n#\n#\n");
+        ::printOptionsDependencies(pcsFile);
+        fclose(pcsFile);
+        exit(0);
+    }
+}
 
 //=================================================================================================
 // Main:
 
-int main(int argc, char** argv)
+int main(int argc, char **argv)
 {
     try {
-        setUsageHelp("USAGE: %s [options] <input-file> <result-output-file>\n\n  where input may be either in plain or gzipped DIMACS.\n");
-        setX86FPUPrecision();
-        
+        setUsageHelp("USAGE: %s [options] <input-file> <result-output-file>\n\n  where input may be either in plain or "
+                     "gzipped DIMACS.\n");
+        printf("c This is MergeSAT (simp).\n");
+
+#if defined(__linux__)
+        fpu_control_t oldcw, newcw;
+        _FPU_GETCW(oldcw);
+        newcw = (oldcw & ~_FPU_EXTENDED) | _FPU_DOUBLE;
+        _FPU_SETCW(newcw);
+        printf("c WARNING: for repeatability, setting FPU to use double precision\n");
+#endif
         // Extra options:
         //
-        IntOption    verb   ("MAIN", "verb",   "Verbosity level (0=silent, 1=some, 2=more).", 1, IntRange(0, 2));
-        BoolOption   pre    ("MAIN", "pre",    "Completely turn on/off any preprocessing.", true);
-        BoolOption   solve  ("MAIN", "solve",  "Completely turn on/off solving after preprocessing.", true);
-        StringOption dimacs ("MAIN", "dimacs", "If given, stop after preprocessing and write the result to this file.");
-        IntOption    cpu_lim("MAIN", "cpu-lim","Limit on CPU time allowed in seconds.\n", 0, IntRange(0, INT32_MAX));
-        IntOption    mem_lim("MAIN", "mem-lim","Limit on memory usage in megabytes.\n", 0, IntRange(0, INT32_MAX));
-        BoolOption   strictp("MAIN", "strict", "Validate DIMACS header during parsing.", false);
+        IntOption verb("MAIN", "verb", "Verbosity level (0=silent, 1=some, 2=more).", 1, IntRange(0, 4), false);
+        BoolOption pre("MAIN", "pre", "Completely turn on/off any preprocessing.", true);
+        BoolOption s_model("MAIN", "model", "Do report a model if the formula is satisfiable.", true, false);
+        IntOption opt_model_width("MAIN", "model-width", "How many variables should on one model output line", 20,
+                                  IntRange(0, INT32_MAX));
+        StringOption dimacs("MAIN", "dimacs", "If given, stop after preprocessing and write the result to this file.");
+        IntOption cpu_lim("MAIN", "cpu-lim", "Limit on CPU time allowed in seconds.\n", INT32_MAX, IntRange(0, INT32_MAX), false);
+        IntOption mem_lim("MAIN", "mem-lim", "Limit on memory usage in megabytes.\n", INT32_MAX, IntRange(0, INT32_MAX), false);
+        IntOption con_lim("MAIN", "con-lim", "Limit the number of conflicts for the search.\n", -1, IntRange(-1, INT32_MAX), false);
+        BoolOption drup_binary("MAIN", "binary-proof", "Write proof in binary format.", true, false);
+        StringOption drup_file("MAIN", "drup-file", "DRUP UNSAT proof ouput file.", "", false);
+        IntOption opt_checkProofOnline("MAIN", "check-proof", "Check proof during run time", 0, IntRange(0, 10), false);
+        StringOption pcs_file("MAIN", "pcs-file", "Print solver parameter configuration to this file.", "", false);
+
+        IntOption opt_diversify_rank("MAIN", "diversify-rank", "Select a diversification rank to quickly test another configuration",
+                                     0, IntRange(-1, INT32_MAX), false);
+        IntOption opt_diversify_size("MAIN", "diversify-size", "Select a diversification size to quickly test another configuration",
+                                     32, IntRange(1, INT32_MAX), false);
 
         parseOptions(argc, argv, true);
-        
-        SimpSolver  S;
-        double      initial_time = cpuTime();
+
+        if (!pcs_file.is_empty()) print_pcs_file(pcs_file);
+
+        // Use signal handlers that forcibly quit until the solver will be able to respond to
+        // interrupts:
+        signal(SIGINT, SIGINT_exit);
+        signal(SIGTERM, SIGINT_exit);
+        signal(SIGXCPU, SIGINT_exit);
+
+        // Set limit on CPU-time:
+        if (cpu_lim != INT32_MAX) {
+            rlimit rl;
+            getrlimit(RLIMIT_CPU, &rl);
+            if (rl.rlim_max == RLIM_INFINITY || (rlim_t)cpu_lim < rl.rlim_max) {
+                rl.rlim_cur = cpu_lim;
+                if (setrlimit(RLIMIT_CPU, &rl) == -1) printf("c WARNING! Could not set resource limit: CPU-time.\n");
+            }
+        }
+
+        // Set limit on virtual memory:
+        if (mem_lim != INT32_MAX) {
+            rlim_t new_mem_lim = (rlim_t)mem_lim * 1024 * 1024;
+            rlimit rl;
+            getrlimit(RLIMIT_AS, &rl);
+            if (rl.rlim_max == RLIM_INFINITY || new_mem_lim < rl.rlim_max) {
+                rl.rlim_cur = new_mem_lim;
+                if (setrlimit(RLIMIT_AS, &rl) == -1)
+                    printf("c WARNING! Could not set resource limit: Virtual memory.\n");
+            }
+        }
+
+        SimpSolver S;
+        double initial_time = cpuTime();
 
         if (!pre) S.eliminate(true);
 
+        S.parsing = true;
         S.verbosity = verb;
-        
+        if (strlen(drup_file)) {
+            S.proof.setVerbosity(verb);
+            S.proof.init(drup_file, drup_binary, opt_checkProofOnline);
+            printf("c DRUP proof generation: %s\n", (const char *)drup_file);
+        }
         solver = &S;
-        // Use signal handlers that forcibly quit until the solver will be able to respond to
-        // interrupts:
-        sigTerm(SIGINT_exit);
 
-        // Try to set resource limits:
-        if (cpu_lim != 0) limitTime(cpu_lim);
-        if (mem_lim != 0) limitMemory(mem_lim);
+        if (argc == 1) printf("c Reading from standard input... Use '--help' for help.\n");
 
-        if (argc == 1)
-            printf("Reading from standard input... Use '--help' for help.\n");
+#ifdef USE_LIBZ
+        gzFile in = (argc == 1) ? gzdopen(0, "rb") : gzopen(argv[1], "rb");
+#else
+        FILE *in = (argc == 1) ? stdin : open_to_read_file(argv[1]);
+#endif
+        if (in == NULL) printf("c ERROR! Could not open file: %s\n", argc == 1 ? "<stdin>" : argv[1]), exit(1);
 
-        FILE* in = (argc == 1) ? fopen(0, "rb") : fopen(argv[1], "rb");
-        if (in == NULL)
-            printf("ERROR! Could not open file: %s\n", argc == 1 ? "<stdin>" : argv[1]), exit(1);
-        
-        if (S.verbosity > 0){
-            printf("============================[ Problem Statistics ]=============================\n");
-            printf("|                                                                             |\n"); }
-        
-        parse_DIMACS(in, S, (bool)strictp);
+        if (S.verbosity > 0) {
+            printf("c ============================[ Problem Statistics ]=============================\n");
+            printf("c |                                                                             |\n");
+        }
+
+        if (opt_diversify_rank >= 0) {
+            if (S.verbosity > 0)
+                printf("c |  Diversify with rank:  %12d size:  %12d                     |\n",
+                       opt_diversify_rank % opt_diversify_size, (int)opt_diversify_size);
+            S.diversify(opt_diversify_rank % opt_diversify_size, opt_diversify_size);
+        }
+
+        parse_DIMACS(in, S);
         fclose(in);
-        FILE* res = (argc >= 3) ? fopen(argv[2], "wb") : NULL;
+        FILE *res = (argc >= 3) ? fopen(argv[2], "wb") : NULL;
 
-        if (S.verbosity > 0){
-            printf("|  Number of variables:  %12d                                         |\n", S.nVars());
-            printf("|  Number of clauses:    %12d                                         |\n", S.nClauses()); }
-        
+        if (S.verbosity > 0) {
+            printf("c |  Number of variables:  %12d                                         |\n", S.nVars());
+            printf("c |  Number of clauses:    %12d                                         |\n", (int)S.nClauses());
+        }
+
         double parsed_time = cpuTime();
         if (S.verbosity > 0)
-            printf("|  Parse time:           %12.2f s                                       |\n", parsed_time - initial_time);
+            printf("c |  Parse time:           %12.2f s                                       |\n", parsed_time - initial_time);
 
         // Change to signal-handlers that will only notify the solver and allow it to terminate
         // voluntarily:
-        sigTerm(SIGINT_interrupt);
+        signal(SIGINT, default_signal_handler);
+        signal(SIGTERM, default_signal_handler);
+        signal(SIGXCPU, default_signal_handler);
+        signal(SIGSEGV, default_signal_handler); /* we still want to understand the state */
 
+        S.parsing = false;
         S.eliminate(true);
         double simplified_time = cpuTime();
-        if (S.verbosity > 0){
-            printf("|  Simplification time:  %12.2f s                                       |\n", simplified_time - parsed_time);
-            printf("|                                                                             |\n"); }
+        if (S.verbosity > 0) {
+            printf("c |  Simplification time:  %12.2f s                                       |\n", simplified_time - parsed_time);
+            printf("c |  Simplification accesses: %12" PRId64 "                                      |\n", S.counter_sum());
+            printf("c |                                                                             |\n");
+        }
 
-        if (!S.okay()){
-            if (res != NULL) fprintf(res, "UNSAT\n"), fclose(res);
-            if (S.verbosity > 0){
-                printf("===============================================================================\n");
-                printf("Solved by simplification\n");
-                S.printStats();
-                printf("\n"); }
-            printf("UNSATISFIABLE\n");
+        if (!S.okay()) {
+            if (res != NULL) fprintf(res, "s UNSATISFIABLE\n"), fclose(res);
+            if (S.verbosity > 0) {
+                printf("c ===============================================================================\n");
+                printf("c Solved by simplification\n");
+                printStats(S);
+                printf("\n");
+            }
+            printf("s UNSATISFIABLE\n");
+            S.proof.flush(true);
             exit(20);
         }
 
-        lbool ret = l_Undef;
+        if (dimacs) {
+            if (S.verbosity > 0)
+                printf("c ==============================[ Writing DIMACS ]===============================\n");
+            S.toDimacs((const char *)dimacs);
+            if (S.verbosity > 0) printStats(S);
+            exit(0);
+        }
 
-        if (solve){
-            vec<Lit> dummy;
-            ret = S.solveLimited(dummy);
-        }else if (S.verbosity > 0)
-            printf("===============================================================================\n");
+        if (con_lim != -1) {
+            S.setConfBudget(con_lim);
+        }
+        vec<Lit> dummy;
+        lbool ret = S.solveLimited(dummy);
 
-        if (dimacs && ret == l_Undef)
-            S.toDimacs((const char*)dimacs);
+        if (S.verbosity > 0) {
+            printStats(S);
+            printf("\n");
+        }
+        printf(ret == l_True ? "s SATISFIABLE\n" : ret == l_False ? "s UNSATISFIABLE\n" : "s UNKNOWN\n");
+        if (ret == l_True && s_model) {
+            std::stringstream model_stream;
+            printf("v");
+            int vars_on_last_line = 0;
+            for (int i = 0; i < S.nVars(); i++) {
+                if (S.modelValue(i) != l_Undef)
+                    model_stream << " " << ((S.modelValue(i) == l_True) ? "" : "-") << (i + 1);
+                // add a new line, if too many variables have been printed
+                vars_on_last_line++;
+                if (opt_model_width > 0 && vars_on_last_line >= opt_model_width) {
+                    model_stream << std::endl << "v";
+                    vars_on_last_line = 0;
+                }
+                if (model_stream.str().size() > 1024 * 1024 * 2) {
+                    // print current part, and continue with cleared buffer
+                    printf("%s", model_stream.str().c_str());
+                    model_stream.str(std::string());
+                }
+            }
+            printf("%s 0\n", model_stream.str().c_str());
+        }
 
-        if (S.verbosity > 0){
-            S.printStats();
-            printf("\n"); }
-        printf(ret == l_True ? "SATISFIABLE\n" : ret == l_False ? "UNSATISFIABLE\n" : "INDETERMINATE\n");
-        if (res != NULL){
-            if (ret == l_True){
-                fprintf(res, "SAT\n");
+        S.proof.flush(ret == l_False);
+
+        if (res != NULL) {
+            if (ret == l_True) {
+                fprintf(res, "s SATISFIABLE\nv ");
                 for (int i = 0; i < S.nVars(); i++)
-                    if (S.model[i] != l_Undef)
-                        fprintf(res, "%s%s%d", (i==0)?"":" ", (S.model[i]==l_True)?"":"-", i+1);
+                    if (S.modelValue(i) != l_Undef)
+                        fprintf(res, "%s%s%d", (i == 0) ? "" : " ", (S.modelValue(i) == l_True) ? "" : "-", i + 1);
                 fprintf(res, " 0\n");
-            }else if (ret == l_False)
-                fprintf(res, "UNSAT\n");
+            } else if (ret == l_False)
+                fprintf(res, "s UNSATISFIABLE\n");
             else
-                fprintf(res, "INDET\n");
+                fprintf(res, "s UNKNOWN\n");
             fclose(res);
         }
 
 #ifdef NDEBUG
-        exit(ret == l_True ? 10 : ret == l_False ? 20 : 0);     // (faster than "return", which will invoke the destructor for 'Solver')
+        exit(ret == l_True ? 10 : ret == l_False ? 20 : 0); // (faster than "return", which will invoke the destructor for 'Solver')
 #else
         return (ret == l_True ? 10 : ret == l_False ? 20 : 0);
 #endif
-    } catch (OutOfMemoryException&){
-        printf("===============================================================================\n");
-        printf("INDETERMINATE\n");
+    } catch (OutOfMemoryException &) {
+        printf("c ===============================================================================\n");
+        printf("c Out of memory\n");
+        printf("s UNKNOWN\n");
         exit(0);
     }
-
-}
-
-// Returns the number of digits in the given number.
-int numDigits(int number) {
-  int digits = 0;
-  for (int n = number; n > 0; n /= 10)
-    digits++;
-  return digits;
-}
-
-extern "C"{
-  const char* solve_string(char* in, int size) {
-    SimpSolver S;
-    solver = &S;
-    bool ok = parse_DIMACS_string((unsigned char*)in, size, S, false);
-    if (!ok)
-      return "";  // The error was already printed to stderr.
-
-    S.eliminate(true);
-    if (!S.okay()){
-      return "UNSAT";
-    }
-
-    lbool ret = l_Undef;
-
-    vec<Lit> dummy;
-    ret = S.solveLimited(dummy);
-
-    if (ret == l_True) {
-      // Compute the size needed for the output string.
-      int size = 3;
-      for (int i = 0; i < S.nVars(); i++)
-        if (S.model[i] != l_Undef)
-          size += 1 + (S.model[i] == l_True ? 0 : 1) + numDigits(i+1);
-      // Produce the result string.
-      char* result = new char[size + 1];
-      int pos = 0;
-      pos += snprintf(result, size + 1 - pos, "SAT");
-      for (int i = 0; i < S.nVars(); i++)
-        if (S.model[i] != l_Undef)
-          pos += snprintf(result + pos, size + 1 - pos, " %s%d", (S.model[i] == l_True) ? "" : "-", i + 1);
-      return result;
-    } else if (ret == l_False)
-      return "UNSAT";
-    else
-      return "INDET";
-  }
 }

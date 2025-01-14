@@ -1,6 +1,7 @@
 // (start of meteor/extern-preamble.js)
 // provide stubs or proxies for nodejs APIs referenced by emscripten.
 const proc = require('process');
+const fs = require('fs');
 const perfHooks = require('perf_hooks');
 const nodever = proc.versions.node;
 const noderelease = { ...(proc.release) }
@@ -12,9 +13,7 @@ require = function (mod) {
   // mock 'fs' module
   if (mod === 'fs') {
     return {
-      readFileSync: function (filename) {
-        ; // no-op
-      }
+      readFileSync: fs.readFileSync
     };
   } else if (mod === 'perf_hooks') {
     return perfHooks;

@@ -18,12 +18,13 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
-#ifndef Minisat_Alg_h
-#define Minisat_Alg_h
+#ifndef MergeSat_Alg_h
+#define MergeSat_Alg_h
 
-#include "minisat/mtl/Vec.h"
+#include "mtl/Vec.h"
 
-namespace Minisat {
+namespace MERGESAT_NSPACE
+{
 
 //=================================================================================================
 // Useful functions on vector-like types:
@@ -32,23 +33,34 @@ namespace Minisat {
 // Removing and searching for elements:
 //
 
-template<class V, class T>
-static inline void remove(V& ts, const T& t)
+template <class V, class T> static inline void remove(V &ts, const T &t)
 {
     int j = 0;
-    for (; j < (int)ts.size() && ts[j] != t; j++);
-    assert(j < (int)ts.size());
-    for (; j < (int)ts.size()-1; j++) ts[j] = ts[j+1];
+    for (; j < ts.size() && ts[j] != t; j++)
+        ;
+    assert(j < ts.size());
+    for (; j < ts.size() - 1; j++) ts[j] = ts[j + 1];
+    ts.pop();
+}
+
+/// remove but do not keep the order (push last element to deleted position
+template <class V, class T> static inline void removeUnSort(V &ts, const T &t)
+{
+    int j = 0;
+    for (; j < ts.size() && ts[j] != t; j++) {
+    };
+    assert(j < ts.size() && "item must appear in std::vector");
+    ts[j] = ts[ts.size() - 1];
     ts.pop();
 }
 
 
-template<class V, class T>
-static inline bool find(V& ts, const T& t)
+template <class V, class T> static inline bool find(V &ts, const T &t)
 {
     int j = 0;
-    for (; j < (int)ts.size() && ts[j] != t; j++);
-    return j < (int)ts.size();
+    for (; j < ts.size() && ts[j] != t; j++)
+        ;
+    return j < ts.size();
 }
 
 
@@ -57,28 +69,21 @@ static inline bool find(V& ts, const T& t)
 //
 
 // Base case:
-template<class T>
-static inline void copy(const T& from, T& to)
-{
-    to = from;
-}
+template <class T> static inline void copy(const T &from, T &to) { to = from; }
 
 // Recursive case:
-template<class T>
-static inline void copy(const vec<T>& from, vec<T>& to, bool append = false)
+template <class T> static inline void copy(const vec<T> &from, vec<T> &to, bool append = false)
 {
-    if (!append)
-        to.clear();
-    for (int i = 0; i < from.size(); i++){
+    if (!append) to.clear();
+    for (int i = 0; i < from.size(); i++) {
         to.push();
         copy(from[i], to.last());
     }
 }
 
-template<class T>
-static inline void append(const vec<T>& from, vec<T>& to){ copy(from, to, true); }
+template <class T> static inline void append(const vec<T> &from, vec<T> &to) { copy(from, to, true); }
 
 //=================================================================================================
-}
+} // namespace MERGESAT_NSPACE
 
 #endif

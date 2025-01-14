@@ -1212,20 +1212,37 @@ Tinytest.add("logic-solver - assumptions", function (test) {
   // MiniSat could return any assignment of the variables here,
   // but we happen to know that it uses all-false as a starting
   // point for search.
-  test.equal(s.solve().getMap(), { A: false, B: false, C: false, D: false });
+  const startingPoint = s.solve().getMap();
+  test.equal(startingPoint, { A: false, B: false, C: false, D: false });
 
   var atLeastOne = Logic.or("A", "B", "C", "D");
   // which of A,B,C,D comes back true is totally arbitrary, but it's
   // deterministic as long as we don't touch anything.
-  test.equal(s.solveAssuming(atLeastOne).getMap(),
-             { A: false, B: true, C: false, D: false });
+  const solution = s.solveAssuming(atLeastOne).getMap();
+
+  // function that returns true if one of the top-level properties
+  //  in the provided map is true.
+  const onePropertyIsTrue = (map) => Object.values(map).some(v => v);
+  // template for an error message when the above function returns false
+  const onePropertyIsTrueFailMessage = (map) => `Expected at least one of the properties in ${JSON.stringify(map)} to be true.`;
+
+  // function that returns true if, at minimum, the desired number of top-level properties
+  //  have the specified value.
+  const atLeastNPropsHaveVal = (map, n, val) =>
+    Object.values(map).reduce((p, v) => (v === val ? ++p : p), 0) >= n; // just counts up the props with the value
+  
+  // template for an error message when the above function returns false
+  const atLeastNPropsHaveValFailMessage = (map, n, val) => `Expected at least ${n} of the properties in ${JSON.stringify(map)} to have value ${val}.`;
+
+  test.isTrue(onePropertyIsTrue(solution),onePropertyIsTrueFailMessage(solution));
   test.equal(formatLines(s._clauseStrings()),
              formatLines(["$or1 v -$assump1",
                           "A v B v C v D v -$or1"]));
 
   // assume the same thing again
-  test.equal(s.solveAssuming(atLeastOne).getMap(),
-             { A: false, B: true, C: false, D: false });
+  const repeatSolution = s.solveAssuming(atLeastOne).getMap();
+  test.isTrue(onePropertyIsTrue(repeatSolution), onePropertyIsTrueFailMessage(repeatSolution));
+             
   test.equal(formatLines(s._clauseStrings()),
              formatLines(["$or1 v -$assump1",
                           "A v B v C v D v -$or1",
@@ -1246,9 +1263,8 @@ Tinytest.add("logic-solver - assumptions", function (test) {
 
   // require a formula that was previously just temporarily assumed!
   s.require(atLeastOne);
-  test.equal(s.solve().getMap(),
-             // any one could be true
-             { A: false, B: true, C: false, D: false });
+  const repeatSolutionAgain = s.solve().getMap();
+  test.isTrue(onePropertyIsTrue(repeatSolutionAgain), onePropertyIsTrueFailMessage(repeatSolutionAgain));
   test.equal(formatLines(s._clauseStrings()),
              formatLines(["$or1 v -$assump1",
                           "A v B v C v D v -$or1",
@@ -1260,9 +1276,9 @@ Tinytest.add("logic-solver - assumptions", function (test) {
                           "-D v -$and1",
                           "$or1"]));
 
-  test.equal(s.solveAssuming("D").getMap(),
-             // at least D is true; other than that, anything goes
-             { A: false, B: true, C: false, D: true });
+  const dTrueSoln = s.solveAssuming("D").getMap();
+  test.equal(dTrueSoln?.D, true);
+  test.isTrue(onePropertyIsTrue(dTrueSoln), onePropertyIsTrueFailMessage(dTrueSoln));
   test.equal(formatLines(s._clauseStrings()),
              formatLines(["$or1 v -$assump1",
                           "A v B v C v D v -$or1",
@@ -1277,18 +1293,21 @@ Tinytest.add("logic-solver - assumptions", function (test) {
 
   var sum = Logic.sum("A", "B", "C", "D");
   var atLeast2 = Logic.greaterThanOrEqual(sum, Logic.constantBits(2));
-  test.equal(s.solveAssuming(atLeast2).getMap(),
-             // any two or more, including D
-             { A: false, B: true, C: false, D: true });
+  const atLeast2Soln = s.solveAssuming(atLeast2).getMap();
+  test.isTrue(atLeastNPropsHaveVal(atLeast2Soln, 2, true), atLeastNPropsHaveValFailMessage(atLeast2Soln, 2, true));
+  test.equal(atLeast2Soln?.D, true);
+
   s.require(atLeast2);
   var atLeast3 = Logic.greaterThanOrEqual(sum, Logic.constantBits(3));
-  test.equal(s.solveAssuming(atLeast3).getMap(),
-             // any three or more, including D
-             { A: true, B: true, C: false, D: true });
+  const atLeast3Soln = s.solveAssuming(atLeast3).getMap();
+  test.isTrue(atLeastNPropsHaveVal(atLeast3Soln, 3, true), atLeastNPropsHaveValFailMessage(atLeast3Soln, 3, true));
+  test.equal(atLeast3Soln?.D, true);
+
   s.require(atLeast3);
   var atLeast4 = Logic.greaterThanOrEqual(sum, Logic.constantBits(4));
-  test.equal(s.solveAssuming(atLeast4).getMap(),
-             { A: true, B: true, C: true, D: true });
+  const atLeast4Soln = s.solveAssuming(atLeast4).getMap();
+  test.isTrue(atLeastNPropsHaveVal(atLeast4Soln, 4, true), atLeastNPropsHaveValFailMessage(atLeast4Soln, 4, true));
+             
 
   s.forbid("C");
   test.equal(s.solve().getMap(),
