@@ -18,9 +18,9 @@ endif
 #inherit any targets not found in this file from "Makefile"
 
 # % matches everything not explicitly specified
-%: inherit # "inherit" is just an empty command to run so we can specify a dependency
-	@$(MAKE) -f Makefile $@ # The rule just has a dependency from "Makefile"
-inherit: ; # the "inherit" command is a no-op
+%: inherit # "inherit" is just an empty command to run so we can specify a dependency on "Makefile"
+	@$(MAKE) --file=Makefile $@ 
+inherit: ;# the "inherit" command is a no-op
 
 ################################################################
 
@@ -29,7 +29,6 @@ inherit: ; # the "inherit" command is a no-op
 # #  and also https://github.com/emscripten-core/emscripten/blob/3.1.74/src/settings.js
 # # Add -g instead of --closure 1 to make the output pretty instead of mangled.
 LOGIC_SOLVER_LDFLAGS?=\
-		-O3  \
 		-s EXPORTED_FUNCTIONS='[\
 			"_addClause", \
 			"_createTheSolver", \
@@ -45,7 +44,6 @@ LOGIC_SOLVER_LDFLAGS?=\
 			"_solveAssuming", \
 			"_unyo", \
 			"_yo", \
-			"allocate", \
 			"ccall", \
 			"cwrap", \
 			"UTF8ToString", \
@@ -58,7 +56,6 @@ LOGIC_SOLVER_LDFLAGS?=\
 			"intArrayFromString", \
 			"intArrayToString", \
 			"writeArrayToMemory", \
-			"stackTrace", \
 			"stackSave", \
 			"stackAlloc", \
 			"stackRestore", \
@@ -68,14 +65,14 @@ LOGIC_SOLVER_LDFLAGS?=\
 		-s MIN_NODE_VERSION=140000 \
 		-s EXPORT_ALL=1 \
 		-s WASM_ASYNC_COMPILATION=0 \
-		-s WASM=0 \
 		-s MODULARIZE=1 \
 		-s ASSERTIONS=1 \
 		-s ALLOW_MEMORY_GROWTH=1 \
 		-s NO_FILESYSTEM=1  \
-		--extern-pre-js ./meteor/extern-preamble.js  \
 		-s ENVIRONMENT=node \
 		-s SINGLE_FILE=1 \
+		--extern-pre-js ./meteor/extern-preamble.js  \
+		--pre-js ./meteor/preamble.js  \
 
 
 	# OTHER OPTIONS:
@@ -89,7 +86,7 @@ LOGIC_SOLVER_LDFLAGS?=\
 		# --pre-js ./meteor/preamble.js  \
 		# --post-js ./meteor/postamble.js  \
 		# -s IMPORTED_MEMORY=1 \
-
+		# -s WASM=0 \
 		# -s ENVIRONMENT=node \
 		# -s NO_DYNAMIC_EXECUTION=0 \
 		# -s SINGLE_FILE=1 \
@@ -97,6 +94,7 @@ LOGIC_SOLVER_LDFLAGS?=\
 		# -s ALLOW_MEMORY_GROWTH=1 \
 		# -s WASM=0
 		# -s ABORTING_MALLOC=1 \
+		# -sINLINING_LIMIT \
 
 # ----------------------------------------------------------------
 # Run with environment variable ENABLE_INSTRUMENTATION=true to enable
@@ -106,11 +104,11 @@ LOGIC_SOLVER_LDFLAGS?=\
 # 
 
 ENABLE_INSTRUMENTATION ?= false
-INSTRUMENTATION_FLAGS ?= -g --post-js ./meteor/postamble.js
-OPTIMIZATION_FLAGS ?= --closure 1
+INSTRUMENTATION_FLAGS ?= -O0 -g3 --post-js ./meteor/postamble.js
+OPTIMIZATION_FLAGS ?= -Oz -sINLINING_LIMIT -flto --closure 1
 
+# check env var to enable/disable the hacky malloc instrumentation
 check-instrumemtation:
-	# check env var to enable/disable the hacky malloc instrumentation
 	$(eval LOGIC_SOLVER_LDFLAGS += $(if $(filter $(ENABLE_INSTRUMENTATION),true), $(INSTRUMENTATION_FLAGS) , $(OPTIMIZATION_FLAGS)))
 
 
@@ -133,27 +131,25 @@ $(BUILD_DIR)/release/bin/minisat-meteor.js:		LDFLAGS += $(RELEASE_LDFLAGS)
 $(BUILD_DIR)/%/bin/minisat-meteor.js:				LDFLAGS += $(LOGIC_SOLVER_LDFLAGS)
 
 ## Executable dependencies
-$(BUILD_DIR)/release/bin/minisat-meteor.js:	 	$(BUILD_DIR)/release/minisat/simp/Main.o $(BUILD_DIR)/release/lib/$(MINISAT_SLIB) $(BUILD_DIR)/release/meteor/logic-solver.o
+$(BUILD_DIR)/release/bin/minisat-meteor.js:	 	$(BUILD_DIR)/release/lib/$(MINISAT_SLIB) $(BUILD_DIR)/release/meteor/logic-solver.o
 
 ## Compile rules (these should be unified, buit I have not yet found a way which works in GNU Make)
 $(BUILD_DIR)/release/%.o:	%.cc
-	$(ECHO) Compiling: $@
+	$(VERB) $(ECHO) Compiling: $@
 	$(VERB) mkdir -p $(dir $@)
 	$(VERB) $(CXX) $(CXXFLAGS) -c -o $@ $< -MMD -MF $(BUILD_DIR)/release/$*.d
 
 ## Linking rule - this will run emscripten
 $(BUILD_DIR)/release/bin/minisat-meteor.js:
-	$(ECHO) ====== Linking Binary: $@
-	$(ECHO) ====== Prerequisites: $^
+	$(VERB) $(ECHO) ====== Linking Binary: $@
+	$(VERB) $(ECHO) ====== Prerequisites: $^
 	$(VERB) mkdir -p $(dir $@)
 	$(VERB) $(CXX) $^ $(LDFLAGS) -o $@
 
 
 clean:
-	rm -f $(foreach t, release debug profile dynamic, $(foreach o, $(SRCS:.cc=.o), $(BUILD_DIR)/$t/$o)) \
-		  $(foreach t, release debug profile dynamic, $(foreach d, $(SRCS:.cc=.d), $(BUILD_DIR)/$t/$d)) \
-	  $(foreach t, release debug profile dynamic, $(BUILD_DIR)/$t/bin/minisat-meteor.js) \
-	  build/minisat.js
+	rm -rvf $(BUILD_DIR)
+
 
 distclean:	clean
 	rm -f config.mk
