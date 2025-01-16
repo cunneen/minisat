@@ -1,7 +1,7 @@
 # This just compiles the meteor/logic-solver.cc into a javascript file i.e.
 #    build/release/bin/minisat-meteor.js
 
-all: check-instrumemtation minisat-meteor.js
+all: check-instrumentation minisat-meteor.js
 
 ## Load common Configuration ###################################
 
@@ -108,7 +108,7 @@ INSTRUMENTATION_FLAGS ?= -O0 -g3 --post-js ./meteor/postamble.js
 OPTIMIZATION_FLAGS ?= -Oz -sINLINING_LIMIT -flto --closure 1
 
 # check env var to enable/disable the hacky malloc instrumentation
-check-instrumemtation:
+check-instrumentation:
 	$(eval LOGIC_SOLVER_LDFLAGS += $(if $(filter $(ENABLE_INSTRUMENTATION),true), $(INSTRUMENTATION_FLAGS) , $(OPTIMIZATION_FLAGS)))
 
 
@@ -119,7 +119,7 @@ LDFLAGS  += -Wall
 
 SRCS = meteor/logic-solver.cc $(wildcard minisat/core/*.cc) $(wildcard minisat/simp/*.cc) $(wildcard minisat/utils/*.cc)
 
-minisat-meteor.js:	check-instrumemtation $(BUILD_DIR)/release/bin/minisat-meteor.js
+minisat-meteor.js:	check-instrumentation $(BUILD_DIR)/release/bin/minisat-meteor.js
 
 
 ## Build-type Compile-flags:
