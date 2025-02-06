@@ -8,11 +8,11 @@
 # Directory to store object files, libraries, executables, and dependencies:
 BUILD_DIR      ?= build
 
-# Include debug-symbols in release builds
-MINISAT_RELSYM ?= -g
+# Don't include debug-symbols in release builds
+MINISAT_RELSYM ?= -Oz
 
 # Sets of compile flags for different build types
-MINISAT_REL    ?= -O3 -D NDEBUG
+MINISAT_REL    ?= -Oz -D NDEBUG
 MINISAT_DEB    ?= -O0 -D DEBUG 
 MINISAT_PRF    ?= -O3 -D NDEBUG
 MINISAT_FPIC   ?= -fpic
@@ -54,32 +54,13 @@ SOMAJOR=2
 SOMINOR=1
 SORELEASE?=.0#   Declare empty to leave out from library file name.
 
-# Support more customization
-CXX_EXTRA_FLAGS ?=
-LD_EXTRA_FLAGS ?=
-STATIC_FLAGS ?= -static
-
-SHARED_CXXFLAGS = -I. -Iminisat -D __STDC_LIMIT_MACROS -D __STDC_FORMAT_MACROS
-SHARED_CXXFLAGS = -std=c++11  -flto
-SHARED_CXXFLAGS = -I. -Iminisat -D __STDC_LIMIT_MACROS -D __STDC_FORMAT_MACROS
-MINISAT_CXXFLAGS = $(SHARED_CXXFLAGS) $(CXX_EXTRA_FLAGS)
-MINISAT_CXXFLAGS += -Wall -Wextra -pedantic -Werror
-MINISAT_CXXFLAGS += -Wno-unused-parameter
-EMSCRIPTEN_CXXFLAGS = $(SHARED_CXXFLAGS)
-MINISAT_LDFLAGS  = -Wall -flto $(LD_EXTRA_FLAGS)
-EMSCRIPTEN_LDFLAGS =  -flto $(LD_EXTRA_FLAGS)
+MINISAT_CXXFLAGS = -I. -Iminisat -D __STDC_LIMIT_MACROS -D __STDC_FORMAT_MACROS -Wall -Wno-parentheses -Wextra 
+MINISAT_LDFLAGS  = -Wall
 
 ifeq (Darwin,$(findstring Darwin,$(shell uname)))
 	SHARED_LDFLAGS += -shared -Wl,-dylib_install_name,$(MINISAT_DLIB).$(SOMAJOR)
 	RELEASE_LDFLAGS +=
 else
 	SHARED_LDFLAGS += -shared -Wl,-soname,$(MINISAT_DLIB).$(SOMAJOR)
-	RELEASE_LDFLAGS += $(STATIC_FLAGS)
-endif
-
-ECHO=@echo
-ifeq ($(VERB),)
-VERB=@
-else
-VERB=
+	RELEASE_LDFLAGS += -static
 endif

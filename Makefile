@@ -142,15 +142,7 @@ install-bin: $(BUILD_DIR)/dynamic/bin/$(MINISAT)
 	$(INSTALL) -m 755 $(BUILD_DIR)/dynamic/bin/$(MINISAT) $(DESTDIR)$(bindir)
 
 clean:
-	rm -f $(foreach t, release debug profile dynamic, $(wildcard $(BUILD_DIR)/$t/*.cc) $(wildcard $(BUILD_DIR)/$t/*.o) $(wildcard $(BUILD_DIR)/$t/*.d) $(wildcard $(BUILD_DIR)/$t/meteor/logic-solver.*)) \
-	  $(foreach t, release debug profile dynamic, $(BUILD_DIR)/$t/bin/$(MINISAT_CORE) $(BUILD_DIR)/$t/bin/$(MINISAT)) \
-	  $(foreach t, release debug profile, $(BUILD_DIR)/$t/lib/$(MINISAT_SLIB)) \
-	  $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB).$(SOMAJOR).$(SOMINOR)$(SORELEASE)\
-	  $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB).$(SOMAJOR)\
-	  $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB) \
-	  $(foreach t, release debug profile dynamic, $(foreach msat, minisat mergesat, $(BUILD_DIR)/$t/bin/${msat}-meteor.js $(BUILD_DIR)/$t/bin/${msat}-meteor.wasm ) ) \
-	  $(foreach msat, minisat mergesat, $(BUILD_DIR)/$t/bin/${msat}.js)
-
+	rm -rvf $(BUILD_DIR)
 
 distclean:	clean
 	rm -f config.mk

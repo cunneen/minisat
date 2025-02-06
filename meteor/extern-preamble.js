@@ -1,22 +1,23 @@
 // (start of meteor/extern-preamble.js)
+// 
 // provide stubs or proxies for nodejs APIs referenced by emscripten.
-const proc = require('process');
-const fs = require('fs');
-const perfHooks = require('perf_hooks');
-const nodever = proc.versions.node;
-const noderelease = { ...(proc.release) }
 // Put emscripten in "node mode" but don't give it the real `process`
-// object.  It does have access to `console`.
+// object.  
 // This is to avoid emscripten causing memory leaks.
-
+// It *does* have access to `console`.
 require = function (mod) {
   // mock 'fs' module
   if (mod === 'fs') {
     return {
-      readFileSync: fs.readFileSync
+      readFileSync: function (filename) {
+        throw new Error(`github.com/meteor/minisat: meteor > extern-preamble.js > require > readFileSync not implemented`);
+        ; // no-op
+      }
     };
   } else if (mod === 'perf_hooks') {
-    return perfHooks;
+    return {
+      now: () => Date.now()
+    };
   }
 };
 const process = {
@@ -33,10 +34,12 @@ const process = {
     }
   },
   versions: {
-    node: nodever
+    "node": "14.21.3"
   },
-  release: noderelease,
-  exit: proc.exit
+  release: {
+    "name": "node",
+  },
+  exit: (code) => { console?.error(`github.com/meteor/minisat meteor > extern-preamble.js > process > exit not implemented.`); }
 };
-var window = 0;
+const window = 0;
 // (end of meteor/extern-preamble.js)

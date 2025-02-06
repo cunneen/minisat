@@ -53,11 +53,4 @@ if (typeof setInnerMalloc !== 'undefined') {
   setInnerFree(hookedFree);
 }
 
-//   return module.exports;
-// };
-// // Just so we can also run as a node module via
-// // `C_MINISAT = require('minisat.js')()`:
-// if (typeof module !== 'undefined') {
-//   module.exports = C_MINISAT;
-// }
 // (end of meteor/postamble.js)
